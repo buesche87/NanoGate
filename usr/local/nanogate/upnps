@@ -1,0 +1,6 @@
+#!/bin/bash
+## A simple command for Debian that will send UPnP for OpenVPN Service
+## usage:
+## ./upnps
+
+upnpc -a `ip a | grep "global" | egrep "eth0" | awk "{ print $2 }"` 1194 1194 TCP

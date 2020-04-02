@@ -1,0 +1,29 @@
+#!/bin/bash
+## A simple command for Debian that will change the WPA Key in hostapd
+## usage:
+## sudo ./pskc <psk>
+
+new_psk=$1
+wifidev="wlan0"
+
+echo
+echo "[ KEY: $new_psk ]"
+echo
+
+if [ -z "$1" ]
+  then
+    echo "-------------------------"
+    echo "Keine Parameter definiert"
+    echo "Usage: pskc 'PSK'"
+    echo "-------------------------"
+  else
+    echo
+    echo "... aktualisiere NanoGateway WLAN"
+    echo
+    sudo sed -i "s/psk=*/psk="$new_psk"/"  /etc/wpa_supplicant/wpa_supplicant.conf
+    echo
+    echo "... Hotspot restart"
+    #ip link set dev "$wifidev" down
+    sudo ifdown wlan0; ifup wlan0
+    #ip link set dev "$wifidev" up
+fi

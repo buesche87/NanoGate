@@ -1,0 +1,199 @@
+--- Write FriendlyOS Core ---
+
+root / fa
+
+--- Installation Software ---
+
+apt-get install iptables iptables-persistent mosquitto-clients lighttpd isc-dhcp-server bind9 bind9utils 
+
+
+--- config ---
+
+locale-gen de_CH.UTF-8
+update-locale LANG=de_CH.UTF-8
+timedatectl set-timezone Europe/Zurich
+swapoff -a
+
+nano /etc/fstab
+
+  # /mnt/512MB.swap    none    swap    sw    0    0
+
+hostnamectl set-hostname NanoGateway
+
+nano /etc/hosts
+
+  127.0.0.1    localhost.localdomain localhost
+  127.0.1.1    NanGateway
+
+nano /etc/network/interfaces
+
+  allow-hotplug wlan0
+  auto wlan0
+      iface wlan0 inet static
+      # pre-up iptables-restore < /usr/share/network-conf/ap/iptables.up.rules
+      address 192.168.42.1
+      netmask 255.255.255.0
+      wpa-conf /etc/wpa_supplicant/wpa_supplicant.conf
+      dns-nameservers 192.168.42.1 127.0.0.1
+      dns-search nano.lan
+
+update-rc.d -f bluetooth remove
+update-rc.d -f x11-common remove
+
+
+-- Hostapd --
+
+turn-wifi-into-apmode yes
+
+nano /etc/hostapd/hostapd.conf
+
+
+-- DHCP Server --
+
+systemctl enable isc-dhcp-server
+
+nano /etc/default/isc-dhcp-server
+
+  INTERFACES="wlan0"
+
+/usr/sbin/rndc-confgen -a -b 512
+
+cp /etc/bind/rndc.key /etc/dhcp/ddns-keys
+chown root:root /etc/dhcp/ddns-keys/rndc.key
+chmod 640 /etc/dhcp/ddns-keys/rndc.key
+
+nano /etc/dhcpd/dhcpd.conf
+nano /usr/bin/dhcps
+chmod +x /usr/bin/dhcps
+
+update-rc.d -f udhcpd remove
+apt-get remove udhcpd
+
+
+-- DNS Server --
+
+systemctl enable bind9
+
+nano /etc/default/bind9
+  OPTIONS="-u bind -4"
+
+nano /etc/bind/named.conf.options
+nano /etc/bind/named.conf.local
+mkdir /etc/bind/zones
+nano /etc/bind/zones/db.nano.lan
+nano /etc/bind/zones/db.192.168.42
+
+chmod -R 775 /etc/bind/zones
+chown -R root:bind /etc/bind/zones
+
+sudo named-checkconf
+
+nmtui -> eth0 add 127.0.0.1
+evtl. /etc/resolv.conf 
+  nameserver 127.0.0.1
+  nameserver 192.168.42.1
+
+evtl. /etc/default/bind9
+  RESOLVCONF=yes
+
+
+update-rc.d -f dnsmasq remove
+apt-get remove dnsmasq
+
+
+--- OpenVPN ---
+
+wget https://git.io/vpn1604 -O openvpn-install.sh
+chmod +x openvpn-install.sh
+./openvpn-install.sh
+
+Client File von /root downloaden
+
+
+-- Change PSK --
+
+nano /usr/bin/pskc
+chmod +x /usr/bin/pskc
+
+
+-- Webserver --
+
+cd /etc/lighttpd/conf-enabled/
+
+ln -s ../conf-available/10-cgi.conf
+
+nano /etc/lighttpd/conf-enabled/10-cgi.conf
+nano /etc/lighttpd/lighttpd.conf
+
+service lighttpd reload
+
+nano /var/www/html/cgi-bin/settings.cgi
+chmod +x /var/www/html/cgi-bin/settings.cgi
+
+nano /etc/sudoers
+
+-> www-data ALL=(ALL) NOPASSWD: ALL
+
+
+-- DHCP Leases --
+apt-get install python3-minimal
+
+nano /usr/bin/ldhcp.py
+chmod +x /usr/bin/ldhcp.py
+
+
+-- chgip --
+
+nano /usr/bin/chgip
+chmod +x /usr/bin/chgip
+
+
+
+
+-- Firewall --
+
+systemctl enable netfilter-persistent
+
+iptables -A INPUT -i eth0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A INPUT -i tun0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -i eth0 -o wlan0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -i wlan0 -o eth0 -j ACCEPT
+iptables -A FORWARD -j ACCEPT
+iptables -A FORWARD -i eth0 -o tun0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -A FORWARD -i tun0 -o eth0 -j ACCEPT
+
+iptables -t nat -A PREROUTING -d 10.8.0.0/24 -i tun0 -j NETMAP --to 192.168.42.0/24
+iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o wlan0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
+netfilter-persistent save
+netfilter-persistent reload
+
+
+
+
+
+--- CPU Temp ---
+
+nano /usr/bin/cputemp
+chmod +x /usr/bin/cputemp
+
+crontab -e
+
+*/1 * * * * /usr/bin/cputemp
+
+
+--- pi-hole ---
+
+curl -sSL https://install.pi-hole.net | bash?
+
+address: 192.168.42.1/24
+gateway: 192.168.1.1
+
+sudo pihole -a -p
+
+bind9 forwarders:
+
+

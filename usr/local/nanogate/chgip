@@ -1,0 +1,158 @@
+#!/bin/bash
+
+function delete_fw_rules {
+
+	old_preroute=$(iptables -t nat -S | grep "PREROUTING -d 1" | awk '{first = $1; $1 = ""; print $0}')
+	old_postroute=$(iptables -t nat -S | grep "POSTROUTING -s" | awk '{first = $1; $1 = ""; print $0}')
+	
+	iptables -t nat -D$old_preroute
+	iptables -t nat -D$old_postroute 
+}
+
+function create_fw_rules {
+
+	iptables -t nat -A PREROUTING -d 10.8.0.0/24 -i tun0 -j NETMAP --to $1/24
+	iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o $2 -j MASQUERADE
+}
+
+function apply_settings {
+
+	netfilter-persistent save
+	netfilter-persistent reload
+	
+	ifdown eth0 
+	ifup eth0
+	dhclient eth0
+}
+
+function show_settings {
+
+	eth0ip=$(ip a | grep "global" | egrep "eth0" | grep -v '169.254' | awk '{ print $2 }')
+	wlan0ip=$(ip a | grep "global" | egrep "wlan0" | awk '{ print $2 }')
+	tun0ip=$(ip a | grep "global" | egrep "tun0" | awk '{ print $2 }')
+	gateway=$(ip r | grep -m1 'default' | awk '{ print $3 }')
+	ETH_MASK=$(ip link show eth0 | grep -m1 'inet' | awk '{ print $4 }' | sed 's/Mask://g')
+	ETH_DNS=$(cat /etc/resolv.conf | grep -m1 nameserver | awk '{print $2}')
+	preroute=$(iptables -t nat -S | grep "PREROUTING -d 1" | awk '{first = $1; $1 = ""; print $0}')
+	postroute=$(iptables -t nat -S | grep "POSTROUTING -s" | awk '{first = $1; $1 = ""; print $0}')
+
+	if [[ $postroute =~ "eth0" ]]; then
+		vpncfg="VPN access to LAN"
+	elif [[ $postroute =~ "wlan0" ]]; then
+		vpncfg="VPN access to WLAN"
+	else
+		vpncfg="VPN access not defined"
+	fi
+	
+	preroute="${preroute/ /}"
+	postroute="${postroute/ /}"
+	
+	if [ -z $gateway ]; then
+		gateway="No Gateway set"
+	fi
+	if [ -z $eth0ip ]; then
+		eth0ip="Not connected"
+	fi
+	if [ -z $wlan0ip ]; then
+		wlan0ip="Not connected"
+	fi
+	if [ -z $tun0ip ]; then
+		tun0ip="Not connected"
+	fi
+	if [ -z $ETH_DNS ]; then
+		ETH_DNS="No Nameservers"
+	fi
+	
+	echo "[Network Adapters]"
+	echo ""
+	echo -e "eth0: \t $eth0ip"
+	echo -e "<font color='hotpink'>wlan0: \t $wlan0ip</font>"
+	echo -e "tun0: \t $tun0ip"
+	echo -e "Gateway: $gateway"
+	echo -e "DNS: \t $ETH_DNS"
+	echo -e ""
+	echo -e "[Firewall Settings]"
+	echo -e ""
+	echo -e "<font color='hotpink'>$vpncfg</font>"
+	echo -e ""
+	echo -e "$preroute"
+	echo -e "$postroute"
+	echo -e ""
+}
+
+if [ "$1" = "-set" ]; then
+
+	# Get new settings
+	new_ip=$2
+	new_gw=$3
+	iface=$4
+	new_mask="255.255.255.0"
+
+	# Get current settings
+	old_ip=$(ip a | grep "eth0" | egrep "inet" | awk '{ print $2 }' | cut -f1 -d"/")
+	old_gw=$(cat /etc/network/interfaces | grep ^gateway | awk '{ print $2 }')
+
+	IP=$(echo "$new_ip" | tr "." "\n")
+	octip1=$(echo ${IP} | tr "." " " | awk '{ print $1 }')
+	octip2=$(echo ${IP} | tr "." " " | awk '{ print $2 }')
+	octip3=$(echo ${IP} | tr "." " " | awk '{ print $3 }')
+	octip4=$(echo ${IP} | tr "." " " | awk '{ print $4 }')
+
+	new_subnetip=$octip1"."$octip2"."$octip3".0"
+	
+	# ------------------
+	# Change IP Settings
+	# ------------------
+	
+	sed -i "s/iface eth0 inet dhcp/iface eth0 inet static/" /etc/network/interfaces
+	
+	if [ ! -z "$old_ip" ]; then
+		sed -i "s/adress "$old_ip"/address "$new_ip"/" /etc/network/interfaces
+	fi
+	
+	if [ ! -z "$new_gw" ]; then
+		sed -i "s/gateway "$old_gw".*/gateway "$new_gw"/" /etc/network/interfaces
+	else
+		sed -i "s/gateway "$old_gw".*/# gateway 0.0.0.0/" /etc/network/interfaces
+	fi
+
+
+	# -----------------
+	# Firewall Settings
+	# -----------------
+
+	delete_fw_rules
+
+	if [ $iface = "wlan0" ]; then
+		create_fw_rules "192.168.42.0" "wlan0"
+	elif [ $iface = "eth0" ]; then
+		create_fw_rules "$new_subnetip" "eth0"
+	else
+		echo "Error choosing Interface"
+	fi
+
+	# --------------------------
+	# Apply & Restart Networking
+	# --------------------------
+	
+	apply_settings
+	show_settings
+	
+elif [ "$1" = "-DHCP" ]; then
+
+	echo "DHCP Client"
+	echo "VPN Access set to WLAN"
+	
+	sed -i "s/iface eth0 inet static/iface eth0 inet dhcp/" /etc/network/interfaces
+	
+	delete_fw_rules
+	create_fw_rules "192.168.42.0" "wlan0"
+	apply_settings
+	show_settings
+	
+else
+
+	show_settings
+
+fi
+

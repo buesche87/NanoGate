@@ -1,0 +1,30 @@
+#!/bin/bash
+if [ "$1" = "-enable" ]; then
+
+	echo "Enable DCHP Server"
+	echo ""
+	/DietPi/dietpi/dietpi-services enable isc-dhcp-server > /dev/null 2>&1
+    /DietPi/dietpi/dietpi-services start isc-dhcp-server > /dev/null 2>&1
+	status=$(systemctl show -p ActiveState isc-dhcp-server | sed 's/ActiveState=//g')
+    echo "DHCP Status: $status"
+
+elif [ "$1" = "-disable" ]; then
+
+	echo "Disable DHCP Server"
+	echo ""
+	/DietPi/dietpi/dietpi-services disable isc-dhcp-server > /dev/null 2>&1
+	status=$(systemctl show -p ActiveState isc-dhcp-server | sed 's/ActiveState=//g')
+    echo "DHCP Status: $status"
+
+
+elif [ "$1" = "-status" ]; then
+
+	status=$(systemctl show -p ActiveState isc-dhcp-server | sed 's/ActiveState=//g')
+	echo "DHCP Status: $status"
+
+else
+
+	echo "Wrong Parameter"
+
+fi
+
