@@ -1,0 +1,30 @@
+#!/bin/bash
+## A simple command for Debian that will change the WPA Key in hostapd
+## usage:
+## sudo ./pskc
+
+wifidev="wlan0"
+
+if [ "$1" = "enable" ]; then
+	
+	systemctl enable openvpn@server
+	systemctl start openvpn@server
+
+	echo "... OpenVPN Aktiviert"
+
+elif [ "$1" = "disable" ]; then
+
+	systemctl stop openvpn@server
+	systemctl disable openvpn@server
+	
+	echo "... OpenVPN Deaktiviert"
+
+elif [ "$1" = "show" ]; then
+
+	systemctl status openvpn@server | head -n 3
+
+else
+
+	echo "... Error"
+
+fi

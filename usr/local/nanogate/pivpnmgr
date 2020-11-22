@@ -1,0 +1,60 @@
+#!/bin/bash
+
+name="$2"
+validity="$3"
+
+function show_clients()
+{
+
+	# Todo awk printf
+	echo -e "$( pivpn -l | grep Valid | tail -n +2 )"
+}
+
+function check_number()
+{
+	re='^[0-9]+$'
+	if ! [[ $validity =~ $re ]] ; then
+	   echo "<h4 style='text-align:left'>Error: '$validity' not a number</h4>"
+	   exit 1
+	fi
+}
+
+if [ "$1" = "add" ] && [ ! -z "$2" ] && [ ! -z "$3" ]; then
+
+	check_number
+	
+	pivpn add nopass -n $name -d $validity > /dev/null 2>&1
+	cp /home/openvpn/ovpns/"$name".ovpn /usr/share/grafana/public/"$name".ovpn
+	chmod 644 /usr/share/grafana/public/"$name".ovpn
+
+	echo "Client $name added - valid for $validity validity"
+	echo "<form method=get action='../public/$name.ovpn'>"
+	echo "<input type='submit' name='cmd' class='form' style='background-color: #c0fcb1; color: #000000; width: 100px' value='Download'>"
+	echo "</form>"
+	
+	show_clients
+
+elif [ "$1" = "remove" ] && [ ! -z "$2" ]; then
+
+	pivpn -r $name > /dev/null 2>&1
+	rm -r /usr/share/grafana/public/"$name".ovpn
+
+	echo "<h4 style='text-align:left'>Client $name removed</h4>"
+	show_clients
+
+elif [ "$1" = "clients" ]; then
+
+	show_clients
+
+elif [ "$1" = "connections" ]; then
+
+	# echo -e "$( pivpn -c |  grep '^[a-Z]' )"
+	echo -e "<p style='text-align:c;'>Name \t\t Remote IP \t Virtual IP \t Bytes Received \t Bytes Sent \t Connected Since</p>"
+	echo ""
+	echo -e "$( pivpn -c | tail -n +6)"
+
+else
+
+	echo "Usage: pivpnmgr add|remove|clients|connections (validity)"
+
+fi

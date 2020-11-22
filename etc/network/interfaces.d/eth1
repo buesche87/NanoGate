@@ -1,0 +1,9 @@
+auto eth1
+iface eth1 inet dhcp
+#	address
+#	netmask
+#	network
+#	broadcast
+#	gateway
+	dns-nameservers 127.0.0.1 192.168.42.1
+	dns-search nano.lan

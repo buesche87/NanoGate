@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# Catch Parameters
+iface="$2"
+
+function delete_fw_rules {
+
+	old_preroute=$(iptables -t nat -S | grep "PREROUTING -d 1" | awk '{first = $1; $1 = ""; print $0}')
+	old_postroute=$(iptables -t nat -S | grep "POSTROUTING -s" | awk '{first = $1; $1 = ""; print $0}')
+	
+	iptables -t nat -D$old_preroute
+	iptables -t nat -D$old_postroute 
+}
+
+function create_fw_rules {
+
+	iptables -t nat -A PREROUTING -d 10.8.0.0/24 -i tun0 -j NETMAP --to $1/24
+	iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o $iface -j MASQUERADE
+}
+
+function apply_settings {
+
+	netfilter-persistent save
+	netfilter-persistent reload
+
+}
+
+function show_settings {
+
+	preroute=$(iptables -t nat -S | grep "PREROUTING -d 1" | awk '{first = $1; $1 = ""; print $0}')
+	postroute=$(iptables -t nat -S | grep "POSTROUTING -s" | awk '{first = $1; $1 = ""; print $0}')
+
+	if [[ $postroute =~ "eth0" ]]; then
+		vpncfg="WAN"
+	elif [[ $postroute =~ "eth1" ]]; then
+		vpncfg="LAN"
+	elif [[ $postroute =~ "wlan0" ]]; then
+		vpncfg="WLAN"
+	else
+		vpncfg="not defined"
+	fi
+
+	preroute="${preroute/ /}"
+	postroute="${postroute/ /}"
+	
+	route=$(route -n)
+
+	echo -e "$preroute"
+	echo -e "$postroute"
+	echo -e ""
+	echo -e "<font color='hotpink'>VPN Access: $vpncfg</font>"
+	echo -e ""
+	echo -e "$route"
+	
+}
+
+if [ "$1" = "set" ] && [ ! -z "$iface" ]; then
+	
+	curip=$(ip a | grep "global" | egrep "$iface" | grep -v '169.254' | awk '{ print $2 }' | cut -f1 -d"/" | head -n 1)
+	
+	IP=$(echo "$curip" | tr "." "\n")
+	octip1=$(echo ${IP} | tr "." " " | awk '{ print $1 }')
+	octip2=$(echo ${IP} | tr "." " " | awk '{ print $2 }')
+	octip3=$(echo ${IP} | tr "." " " | awk '{ print $3 }')
+	octip4=$(echo ${IP} | tr "." " " | awk '{ print $4 }')
+
+	new_subnetip=$octip1"."$octip2"."$octip3".0"
+
+	# -----------------
+	# Firewall Settings
+	# -----------------
+
+	delete_fw_rules
+	create_fw_rules "$new_subnetip" 
+
+	apply_settings
+	show_settings
+
+elif [ "$1" = "setvpn" ]; then
+	
+	echo "setvpn: $2"
+	
+else
+
+	show_settings
+
+fi
+

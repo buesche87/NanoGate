@@ -1,0 +1,9 @@
+[Unit]
+Description=LED Management
+
+[Service]
+Type=idle
+ExecStart=/usr/local/nanogate/ledmgmt
+
+[Install]
+WantedBy=multi-user.target

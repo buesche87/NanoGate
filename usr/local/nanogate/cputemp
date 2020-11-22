@@ -3,7 +3,7 @@
 Server="192.168.42.10"
 DB="NanoPi"
 Topic="temperature"
-Sensor="NanoGateway_CPU"
+Sensor="NanoGate_CPU"
 
 cpuTemp0=$(cat /sys/class/thermal/thermal_zone0/temp)
 cpuTemp1=$(($cpuTemp0/1000))

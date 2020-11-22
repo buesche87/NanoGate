@@ -1,0 +1,192 @@
+#!/bin/bash
+
+# Catch Parameters
+iface="$2"
+new_ip="$3"
+new_gw="$4"
+new_dns="$5"
+new_mask="255.255.255.0"
+
+# Help Functions
+function valid_ip()
+{
+    local  ip=$1
+    local  stat=1
+
+    if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        OIFS=$IFS
+        IFS='.'
+        ip=($ip)
+        IFS=$OIFS
+        [[ ${ip[0]} -le 255 && ${ip[1]} -le 255 \
+            && ${ip[2]} -le 255 && ${ip[3]} -le 255 ]]
+        stat=$?
+    fi
+    return $stat
+}
+
+#/////////////////////////////////////////////////////////////////////////////////////
+# Show Network Settings
+#/////////////////////////////////////////////////////////////////////////////////////
+function show_settings {
+
+	eth0ip=$(ip a | grep "global" | egrep "eth0" | grep -v '169.254' | awk '{ print $2 }' | head -n 1)
+	eth1ip=$(ip a | grep "global" | egrep "eth1" | grep -v '169.254' | awk '{ print $2 }' | head -n 1)
+	wlan0ip=$(ip a | grep "global" | egrep "wlan0" | grep -v '169.254' | awk '{ print $2 }' | head -n 1)
+	tun0ip=$(ip a | grep "global" | egrep "tun0" | awk '{ print $2 }')
+	gateway=$(ip r | grep -m1 'default' | awk '{ print $3 }')
+	nameserver=$(cat /etc/resolv.conf | grep -m1 nameserver | awk '{print $2}')
+
+	if [ -z $gateway ]; then
+		gateway="No Gateway set"
+	fi
+	if [ -z $eth0ip ]; then
+		eth0ip="Not connected"
+	fi
+	if [ -z $eth1ip ]; then
+		eth1ip="Not connected"
+	fi
+	if [ -z $wlan0ip ]; then
+		wlan0ip="Not connected"
+	fi
+	if [ -z $tun0ip ]; then
+		tun0ip="Not connected"
+	fi
+	if [ -z $nameserver ]; then
+		nameserver="No Nameservers"
+	fi
+
+	eth0color="white"
+	eth1color="white"
+	wlan0color="white"
+
+	if [ "$iface" = "eth0" ]; then
+		eth0color="hotpink"
+	elif [ "$iface" = "eth1" ]; then
+		eth1color="hotpink"
+	elif [ "$iface" = "wlan0" ]; then
+		wlan0color="hotpink"
+	fi
+
+	echo -e "<font color='$eth0color'>WAN \t $eth0ip</font>"
+	echo -e "<font color='$eth1color'>LAN \t $eth1ip</font>"
+	echo -e "<font color='$wlan0color'>WLAN \t $wlan0ip</font>"
+	echo -e "VPN \t $tun0ip"
+	echo -e "Gateway\t $gateway"
+	echo -e "DNS \t $nameserver"
+	echo -e "<br>"
+
+}
+
+#/////////////////////////////////////////////////////////////////////////////////////
+# Restart Interface
+#/////////////////////////////////////////////////////////////////////////////////////
+function apply_settings {
+
+	ifdown $iface
+	ifup $iface
+
+	# if [ "$1" = "dhcp" ]; then
+	# 	dhclient $iface
+	# fi
+}
+
+#/////////////////////////////////////////////////////////////////////////////////////
+# Clean Interface
+#/////////////////////////////////////////////////////////////////////////////////////
+function clean_config {
+
+	echo "auto $iface" > /etc/network/interfaces.d/$iface
+	echo "iface $iface inet dhcp" >> /etc/network/interfaces.d/$iface
+	echo "#	address" >> /etc/network/interfaces.d/$iface
+	echo "#	netmask" >> /etc/network/interfaces.d/$iface
+	echo "#	network" >> /etc/network/interfaces.d/$iface
+	echo "#	broadcast" >> /etc/network/interfaces.d/$iface
+	echo "#	gateway" >> /etc/network/interfaces.d/$iface
+	echo "	dns-nameservers 127.0.0.1 192.168.9.1" >> /etc/network/interfaces.d/$iface
+	echo "	dns-search nano.lan" >> /etc/network/interfaces.d/$iface
+
+	ip addr flush dev $iface
+}
+
+#/////////////////////////////////////////////////////////////////////////////////////
+# Set Static IP
+#/////////////////////////////////////////////////////////////////////////////////////
+function static_ip()
+{
+
+	IP=$(echo "$new_ip" | tr "." "\n")
+	octip1=$(echo ${IP} | tr "." " " | awk '{ print $1 }')
+	octip2=$(echo ${IP} | tr "." " " | awk '{ print $2 }')
+	octip3=$(echo ${IP} | tr "." " " | awk '{ print $3 }')
+	octip4=$(echo ${IP} | tr "." " " | awk '{ print $4 }')
+
+	new_subnetip=$octip1"."$octip2"."$octip3".0"
+	new_broadcast=$octip1"."$octip2"."$octip3".255"
+
+	# ------------------
+	# Change IP Settings
+	# ------------------
+
+	clean_config
+
+	sed -i "s/dhcp/static/" /etc/network/interfaces.d/$iface
+	sed -i "s/.*address.*/	address $new_ip/g" /etc/network/interfaces.d/$iface
+	sed -i "s/.*netmask.*/	netmask $new_mask/g" /etc/network/interfaces.d/$iface
+	sed -i "s/#	network.*/	network $new_subnetip/g" /etc/network/interfaces.d/$iface
+	sed -i "s/.*broadcast.*/	broadcast $new_broadcast/g" /etc/network/interfaces.d/$iface
+
+	if [ ! -z "$new_gw" ] && [ "$iface" = "eth0" ]; then
+		sed -i "s/.*gateway.*/	gateway $new_gw/g" /etc/network/interfaces.d/$iface
+	fi
+
+	if [ ! -z "$new_dns" ]; then
+		sed -i "s/.*dns-nameservers.*/	dns-nameservers $new_dns/g" /etc/network/interfaces.d/$iface
+	fi
+
+	# --------------------------
+	# Apply & Restart Networking
+	# --------------------------
+
+	apply_settings
+	show_settings
+}
+
+#/////////////////////////////////////////////////////////////////////////////////////
+# Main
+#/////////////////////////////////////////////////////////////////////////////////////
+if [ "$1" = "set" ]; then
+
+	if [ "$iface" = "wlan0" ]; then 
+		echo "Not supported on WLAN Adapter"
+		exit 1
+	fi
+
+	# check if entered ip options are valid. Set DHCP if not
+    valid_ip "$new_ip" && valid_ip "$new_gw"
+    if [[ $? -eq 0 ]]; then
+		static_ip
+	else
+		clean_config
+		echo "entered address not valid - set interface to dhcp"
+	fi	
+	
+elif [ "$1" = "dhcp" ]; then
+
+	if [ "$iface" = "wlan0" ]; then 
+		echo "Not supported on WLAN Adapter"
+		exit 1
+	fi
+
+	echo "$iface: Set to DHCP"
+	
+	clean_config
+	apply_settings
+	show_settings
+
+else
+
+	show_settings
+
+fi
+

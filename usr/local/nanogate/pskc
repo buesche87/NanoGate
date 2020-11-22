@@ -1,29 +1,44 @@
 #!/bin/bash
 ## A simple command for Debian that will change the WPA Key in hostapd
 ## usage:
-## sudo ./pskc <psk>
+## sudo ./pskc
 
-new_psk=$1
+new_ssid=$2
+new_psk=$3
+
 wifidev="wlan0"
 
-echo
-echo "[ KEY: $new_psk ]"
-echo
+if [ "$1" = "enable" ]; then
+	
+	systemctl enable hostapd
+	systemctl start hostapd
 
-if [ -z "$1" ]
-  then
+	echo "... Hotspot Aktiviert"
+
+elif [ "$1" = "disable" ]; then
+
+	systemctl stop hostapd
+	systemctl disable hostapd
+	
+	echo "... Hotspot Deaktiviert"
+
+elif [ "$1" = "change" ]; then
+
+	echo
+	echo "[ KEY: $new_ssid ]"
+	echo "[ KEY: $new_psk ]"
+	echo
+
+    sudo sed -i "s/ssid=.*/ssid="$new_ssid"/" /etc/hostapd.conf
+    sudo sed -i "s/wpa_passphrase=.*/wpa_passphrase="$new_psk"/" /etc/hostapd.conf
+	
+	echo "... Hotspot restart"
+	systemctl enable hostapd
+	systemctl restart hostapd
+
+else
     echo "-------------------------"
     echo "Keine Parameter definiert"
     echo "Usage: pskc 'PSK'"
     echo "-------------------------"
-  else
-    echo
-    echo "... aktualisiere NanoGateway WLAN"
-    echo
-    sudo sed -i "s/psk=*/psk="$new_psk"/"  /etc/wpa_supplicant/wpa_supplicant.conf
-    echo
-    echo "... Hotspot restart"
-    #ip link set dev "$wifidev" down
-    sudo ifdown wlan0; ifup wlan0
-    #ip link set dev "$wifidev" up
 fi

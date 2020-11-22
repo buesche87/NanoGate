@@ -1,0 +1,7 @@
+#!/bin/bash
+
+leases="$(cat /etc/pihole/dhcp.leases | sort)"
+
+echo "$leases" | awk '{ printf "<a href=\"http://" $4 ".nano.lan \" target=\"_blank\">" $4 "</a> | <a href=\"http://" $3 "\" target=\"_blank\">"$3"</a> | " $2 "\n" }' > /tmp/dhcp.leases
+
+column -t -s' ' /tmp/dhcp.leases

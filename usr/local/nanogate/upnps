@@ -3,4 +3,5 @@
 ## usage:
 ## ./upnps
 
-upnpc -a `ip a | grep "global" | egrep "eth0" | awk "{ print $2 }"` 1194 1194 TCP
+ip="$(ip a | grep 'eth0' | egrep 'inet' | grep -v 169.254 | awk '{ print $2 }' | cut -f1 -d'/')"
+upnpc -a "$ip" 1194 1194 UDP
